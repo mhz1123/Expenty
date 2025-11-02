@@ -151,7 +151,14 @@ class SmsParserService {
       final date = _extractDate(body) ?? DateTime.now();
 
       // Extract category/merchant (optional)
-      final category = _extractCategory(body, type);
+      String category = _extractCategory(body, type);
+
+      // Check if category exists in budgets, if not set to "Misc"
+      final budgetCategories =
+          appProvider.budgets.map((b) => b.category.toLowerCase()).toList();
+      if (!budgetCategories.contains(category.toLowerCase())) {
+        category = 'Misc';
+      }
 
       // Create transaction
       final txn = Transaction(

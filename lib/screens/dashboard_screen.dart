@@ -277,6 +277,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
+    // Add total expenditure line (dark gray)
+    final totalExpenditureSpots = _aggregateTotalExpenditureForAllSlots(
+      expenditures,
+      allSlots,
+    );
+    if (totalExpenditureSpots.isNotEmpty) {
+      // Update max Y based on total expenditure
+      for (var spot in totalExpenditureSpots) {
+        if (spot.y > maxY) maxY = spot.y;
+      }
+
+      lineBarsData.add(
+        LineChartBarData(
+          spots: totalExpenditureSpots,
+          isCurved: true,
+          color: Colors.grey[800]!,
+          barWidth: 4,
+          isStrokeCapRound: true,
+          dotData: FlDotData(
+            show: true,
+            getDotPainter: (spot, percent, barData, index) {
+              return FlDotCirclePainter(
+                radius: 5,
+                color: Colors.grey[800]!,
+                strokeWidth: 2,
+                strokeColor: Colors.white,
+              );
+            },
+          ),
+          belowBarData: BarAreaData(
+            show: true,
+            color: Colors.grey[800]!.withOpacity(0.1),
+          ),
+        ),
+      );
+    }
+
     // Add budget limit line (horizontal dotted line)
     if (periodBudgetLimit > 0) {
       final budgetSpots = <FlSpot>[];
@@ -509,6 +546,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return spots;
   }
 
+  List<FlSpot> _aggregateTotalExpenditureForAllSlots(
+    List<Transaction> transactions,
+    List<String> allSlots,
+  ) {
+    final data = <String, double>{};
+
+    // Initialize all slots with 0
+    for (var slot in allSlots) {
+      data[slot] = 0.0;
+    }
+
+    // Aggregate all expenditure data
+    for (var t in transactions) {
+      String key;
+      switch (_selectedPeriod) {
+        case Period.daily:
+          key = DateFormat('yyyy-MM-dd').format(t.date);
+          break;
+        case Period.weekly:
+          final weekNumber =
+              ((t.date.difference(DateTime(t.date.year, 1, 1)).inDays) / 7)
+                  .floor() +
+              1;
+          key = '${t.date.year}-W${weekNumber.toString().padLeft(2, '0')}';
+          break;
+        case Period.monthly:
+          key = DateFormat('yyyy-MM').format(t.date);
+          break;
+        case Period.yearly:
+          key = t.date.year.toString();
+          break;
+      }
+
+      if (data.containsKey(key)) {
+        data[key] = data[key]! + t.amount;
+      }
+    }
+
+    // Create spots for all slots
+    final spots = <FlSpot>[];
+    for (int i = 0; i < allSlots.length; i++) {
+      spots.add(FlSpot(i.toDouble(), data[allSlots[i]]!));
+    }
+
+    return spots;
+  }
+
   double _calculatePeriodBudgetLimit(double monthlyBudget) {
     if (monthlyBudget == 0) return 0;
 
@@ -581,31 +665,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // New: build a small legend matching category order and colors used in the chart
+  // Updated: build a legend with Total Expenditure line
   Widget _buildLegend(List<String> categories) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Wrap(
         spacing: 12.0,
         runSpacing: 8.0,
-        children: List.generate(categories.length, (i) {
-          final color = _categoryColors[i % _categoryColors.length];
-          return Row(
+        children: [
+          ...List.generate(categories.length, (i) {
+            final color = _categoryColors[i % _categoryColors.length];
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(categories[i], style: const TextStyle(fontSize: 12)),
+              ],
+            );
+          }),
+          // Add Total Expenditure to legend
+          Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
                 width: 12,
                 height: 12,
                 decoration: BoxDecoration(
-                  color: color,
+                  color: Colors.grey[800],
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(width: 6),
-              Text(categories[i], style: const TextStyle(fontSize: 12)),
+              const Text(
+                'Total Expenditure',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
             ],
-          );
-        }),
+          ),
+        ],
       ),
     );
   }

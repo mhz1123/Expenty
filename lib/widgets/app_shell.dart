@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/transactions_screen.dart';
@@ -46,7 +45,7 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('[ EXPENSE_TRACKER_TERMINAL ]'),
+        title: const Text('[ EXPENCER ]'),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
       ),
@@ -56,9 +55,7 @@ class _AppShellState extends State<AppShell> {
           padding: EdgeInsets.zero,
           children: <Widget>[
             const DrawerHeader(
-              decoration: BoxDecoration(
-                color: Colors.black,
-              ),
+              decoration: BoxDecoration(color: Colors.black),
               child: Text(
                 '[ NAV ]',
                 style: TextStyle(color: Colors.white, fontSize: 24),
@@ -66,7 +63,10 @@ class _AppShellState extends State<AppShell> {
             ),
             for (int i = 0; i < _screens.length; i++)
               ListTile(
-                leading: const Text(' \$>', style: TextStyle(color: Colors.grey)),
+                leading: const Text(
+                  ' \$>',
+                  style: TextStyle(color: Colors.grey),
+                ),
                 title: Text('cd ./${_screenTitles[i]}'),
                 onTap: () => _onItemTapped(i),
                 selected: i == _selectedIndex,
