@@ -29,11 +29,23 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
         description: _description,
         date: DateTime.now(),
       );
-      await Provider.of<AppProvider>(context, listen: false).addTransaction(newTransaction);
+
+      // For manual entries, update budget
+      await Provider.of<AppProvider>(
+        context,
+        listen: false,
+      ).addTransaction(newTransaction, updateBudget: true);
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Transaction added successfully!')),
       );
       _formKey.currentState!.reset();
+      setState(() {
+        _type = 'debit';
+        _amount = 0;
+        _category = '';
+        _description = '';
+      });
     }
   }
 
@@ -57,8 +69,7 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    SegmentedButton<
-                        String>(
+                    SegmentedButton<String>(
                       segments: const [
                         ButtonSegment(value: 'debit', label: Text('Debit')),
                         ButtonSegment(value: 'credit', label: Text('Credit')),
@@ -71,19 +82,31 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
                       },
                     ),
                     TextFormField(
-                      decoration: const InputDecoration(labelText: 'Amount (\$)'),
+                      decoration: const InputDecoration(
+                        labelText: 'Amount (\$)',
+                      ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value!.isEmpty ? 'Please enter an amount' : null,
+                      validator:
+                          (value) =>
+                              value!.isEmpty ? 'Please enter an amount' : null,
                       onSaved: (value) => _amount = double.parse(value!),
                     ),
                     TextFormField(
                       decoration: const InputDecoration(labelText: 'Category'),
-                      validator: (value) => value!.isEmpty ? 'Please enter a category' : null,
+                      validator:
+                          (value) =>
+                              value!.isEmpty ? 'Please enter a category' : null,
                       onSaved: (value) => _category = value!,
                     ),
                     TextFormField(
-                      decoration: const InputDecoration(labelText: 'Description'),
-                      validator: (value) => value!.isEmpty ? 'Please enter a description' : null,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                      ),
+                      validator:
+                          (value) =>
+                              value!.isEmpty
+                                  ? 'Please enter a description'
+                                  : null,
                       onSaved: (value) => _description = value!,
                     ),
                     const SizedBox(height: 16.0),

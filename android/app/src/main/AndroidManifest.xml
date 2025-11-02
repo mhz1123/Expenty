@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="expenty_flutter"
+        android:label="Expencer"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

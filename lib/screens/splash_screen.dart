@@ -1,7 +1,8 @@
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../widgets/app_shell.dart';
+import '../providers/app_provider.dart';
 import './signin_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -19,12 +20,28 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkLoginStatus() async {
-    await Future.delayed(const Duration(seconds: 2)); // Simulate a splash screen delay
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (!mounted) return;
+
     final user = FirebaseAuth.instance.currentUser;
+
     if (user != null) {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const AppShell()));
+      // Initialize app provider
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      await appProvider.init();
+
+      if (!mounted) return;
+
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const AppShell()));
     } else {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const SignInScreen()));
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const SignInScreen()),
+      );
     }
   }
 
@@ -32,9 +49,7 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return const Scaffold(
       backgroundColor: Color(0xFFF5F5F5),
-      body: Center(
-        child: CircularProgressIndicator(),
-      ),
+      body: Center(child: CircularProgressIndicator()),
     );
   }
 }

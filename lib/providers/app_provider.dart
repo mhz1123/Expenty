@@ -1,127 +1,254 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/transaction.dart' as expenty_transaction;
 import '../models/budget.dart';
 import '../models/sms_config.dart';
 
 class AppProvider with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   List<expenty_transaction.Transaction> _transactions = [];
   List<Budget> _budgets = [];
   SmsConfig? _smsConfig;
+  bool _isInitialized = false;
 
-  AppProvider() {
-    _fetchTransactions();
-    _fetchBudgets();
-    _fetchSmsConfig();
-  }
+  AppProvider();
 
-  Future<void> _fetchTransactions() async {
-    final snapshot = await _firestore.collection('transactions').orderBy('date', descending: true).get();
-    _transactions = snapshot.docs.map((doc) {
-      dynamic date = doc['date'];
-      if (date is String) {
-        date = DateTime.parse(date);
-      } else if (date is Timestamp) {
-        date = date.toDate();
-      }
-      return expenty_transaction.Transaction(
-        id: doc.id,
-        type: doc['type'] as String,
-        amount: (doc['amount'] as num).toDouble(),
-        category: doc['category'] as String,
-        description: doc['description'] as String,
-        date: date,
-      );
-    }).toList();
-    notifyListeners();
-  }
-
-  Future<void> _fetchBudgets() async {
-    final snapshot = await _firestore.collection('budgets').get();
-    _budgets = snapshot.docs.map((doc) => Budget(
-      id: doc.id,
-      category: doc['category'] as String,
-      limit: (doc['limit'] as num).toDouble(),
-      spent: (doc['spent'] as num).toDouble(),
-      isCompulsory: doc['isCompulsory'] as bool,
-    )).toList();
-    notifyListeners();
-  }
-
-  Future<void> _fetchSmsConfig() async {
-    final snapshot = await _firestore.collection('sms_config').get();
-    if (snapshot.docs.isNotEmpty) {
-      final doc = snapshot.docs.first;
-      _smsConfig = SmsConfig(
-        id: doc.id,
-        senderId: doc['senderId'] as String,
-        debitKeywords: List<String>.from(doc['debitKeywords']),
-        creditKeywords: List<String>.from(doc['creditKeywords']),
-      );
-    }
-    notifyListeners();
-  }
-
+  bool get isInitialized => _isInitialized;
   List<expenty_transaction.Transaction> get transactions => _transactions;
   List<Budget> get budgets => _budgets;
   SmsConfig? get smsConfig => _smsConfig;
 
-  Future<void> addTransaction(expenty_transaction.Transaction transaction) async {
-    final newTransactionRef = await _firestore.collection('transactions').add({
-      'type': transaction.type,
-      'amount': transaction.amount,
-      'category': transaction.category,
-      'description': transaction.description,
-      'date': transaction.date,
-    });
-    _transactions.insert(0, transaction.copyWith(id: newTransactionRef.id));
+  Future<void> init() async {
+    if (_isInitialized) return;
 
-    if (transaction.type == 'debit') {
-      final budgetIndex = _budgets.indexWhere((b) => b.category.toLowerCase() == transaction.category.toLowerCase());
-      if (budgetIndex != -1) {
-        final budget = _budgets[budgetIndex];
-        final updatedBudget = budget.copyWith(spent: budget.spent + transaction.amount);
-        await _firestore.collection('budgets').doc(budget.id).update({'spent': updatedBudget.spent});
-        _budgets[budgetIndex] = updatedBudget;
-      }
+    final user = _auth.currentUser;
+    if (user == null) {
+      debugPrint('No user logged in, skipping initialization');
+      return;
     }
-    notifyListeners();
+
+    try {
+      await Future.wait([
+        _fetchTransactions(),
+        _fetchBudgets(),
+        _fetchSmsConfig(),
+      ]);
+      _isInitialized = true;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error initializing AppProvider: $e');
+    }
+  }
+
+  Future<void> _fetchTransactions() async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+
+      // Query transactions where userId field matches current user
+      final snapshot =
+          await _firestore
+              .collection('transactions')
+              .where('userId', isEqualTo: uid)
+              .orderBy('date', descending: true)
+              .get();
+
+      _transactions =
+          snapshot.docs.map((doc) {
+            dynamic date = doc['date'];
+            if (date is String) {
+              date = DateTime.parse(date);
+            } else if (date is Timestamp) {
+              date = date.toDate();
+            }
+            return expenty_transaction.Transaction(
+              id: doc.id,
+              type: doc['type'] as String,
+              amount: (doc['amount'] as num).toDouble(),
+              category: doc['category'] as String,
+              description: doc['description'] as String,
+              date: date,
+            );
+          }).toList();
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error fetching transactions: $e');
+    }
+  }
+
+  Future<void> _fetchBudgets() async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+
+      // Query budgets where userId field matches current user
+      final snapshot =
+          await _firestore
+              .collection('budgets')
+              .where('userId', isEqualTo: uid)
+              .get();
+
+      _budgets =
+          snapshot.docs
+              .map(
+                (doc) => Budget(
+                  id: doc.id,
+                  category: doc['category'] as String,
+                  limit: (doc['limit'] as num).toDouble(),
+                  spent: (doc['spent'] as num).toDouble(),
+                  isCompulsory: doc['isCompulsory'] as bool,
+                ),
+              )
+              .toList();
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error fetching budgets: $e');
+    }
+  }
+
+  Future<void> _fetchSmsConfig() async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+
+      final doc = await _firestore.collection('sms_config').doc(uid).get();
+
+      if (doc.exists) {
+        _smsConfig = SmsConfig(
+          id: doc.id,
+          senderId: doc['senderId'] as String,
+          debitKeywords: List<String>.from(doc['debitKeywords'] ?? []),
+          creditKeywords: List<String>.from(doc['creditKeywords'] ?? []),
+        );
+      } else {
+        // Create default config
+        _smsConfig = SmsConfig(
+          id: uid,
+          senderId: '',
+          debitKeywords: ['debited', 'withdrawn', 'paid'],
+          creditKeywords: ['credited', 'received', 'deposit'],
+        );
+        await _firestore.collection('sms_config').doc(uid).set({
+          'senderId': _smsConfig!.senderId,
+          'debitKeywords': _smsConfig!.debitKeywords,
+          'creditKeywords': _smsConfig!.creditKeywords,
+        });
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error fetching SMS config: $e');
+    }
+  }
+
+  Future<void> addTransaction(
+    expenty_transaction.Transaction transaction, {
+    bool updateBudget = true,
+  }) async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) {
+        debugPrint('Cannot add transaction: No user logged in');
+        return;
+      }
+
+      // Add userId field to the transaction document
+      final newTransactionRef = await _firestore.collection('transactions').add(
+        {
+          'userId': uid, // Add userId field
+          'type': transaction.type,
+          'amount': transaction.amount,
+          'category': transaction.category,
+          'description': transaction.description,
+          'date': Timestamp.fromDate(transaction.date),
+        },
+      );
+
+      _transactions.insert(0, transaction.copyWith(id: newTransactionRef.id));
+
+      // Only update budget if updateBudget is true (for manual entries)
+      // SMS transactions don't update budget
+      if (updateBudget && transaction.type == 'debit') {
+        final budgetIndex = _budgets.indexWhere(
+          (b) => b.category.toLowerCase() == transaction.category.toLowerCase(),
+        );
+
+        if (budgetIndex != -1) {
+          final budget = _budgets[budgetIndex];
+          final updatedBudget = budget.copyWith(
+            spent: budget.spent + transaction.amount,
+          );
+
+          await _firestore.collection('budgets').doc(budget.id).update({
+            'spent': updatedBudget.spent,
+          });
+
+          _budgets[budgetIndex] = updatedBudget;
+        }
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error adding transaction: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateBudget(Budget budget) async {
-    final budgetIndex = _budgets.indexWhere((b) => b.id == budget.id);
-    if (budgetIndex != -1) {
-      await _firestore.collection('budgets').doc(budget.id).update({
-        'category': budget.category,
-        'limit': budget.limit,
-        'spent': budget.spent,
-        'isCompulsory': budget.isCompulsory,
-      });
-      _budgets[budgetIndex] = budget;
-    } else {
-      final newBudgetRef = await _firestore.collection('budgets').add({
-        'category': budget.category,
-        'limit': budget.limit,
-        'spent': budget.spent,
-        'isCompulsory': budget.isCompulsory,
-      });
-      _budgets.add(budget.copyWith(id: newBudgetRef.id));
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+
+      final budgetIndex = _budgets.indexWhere((b) => b.id == budget.id);
+
+      if (budgetIndex != -1) {
+        // Update existing budget
+        await _firestore.collection('budgets').doc(budget.id).update({
+          'category': budget.category,
+          'limit': budget.limit,
+          'spent': budget.spent,
+          'isCompulsory': budget.isCompulsory,
+        });
+        _budgets[budgetIndex] = budget;
+      } else {
+        // Create new budget with userId
+        final newBudgetRef = await _firestore.collection('budgets').add({
+          'userId': uid, // Add userId field
+          'category': budget.category,
+          'limit': budget.limit,
+          'spent': budget.spent,
+          'isCompulsory': budget.isCompulsory,
+        });
+        _budgets.add(budget.copyWith(id: newBudgetRef.id));
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error updating budget: $e');
     }
-    notifyListeners();
   }
 
   Future<void> updateSmsConfig(SmsConfig smsConfig) async {
-    if (_smsConfig != null) {
-      await _firestore.collection('sms_config').doc(_smsConfig!.id).update({
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+
+      await _firestore.collection('sms_config').doc(uid).set({
         'senderId': smsConfig.senderId,
         'debitKeywords': smsConfig.debitKeywords,
         'creditKeywords': smsConfig.creditKeywords,
       });
-      _smsConfig = smsConfig;
+
+      _smsConfig = smsConfig.copyWith(id: uid);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error updating SMS config: $e');
     }
-    notifyListeners();
   }
 }
 
@@ -146,6 +273,17 @@ extension on Budget {
       limit: this.limit,
       spent: spent ?? this.spent,
       isCompulsory: this.isCompulsory,
+    );
+  }
+}
+
+extension on SmsConfig {
+  SmsConfig copyWith({String? id}) {
+    return SmsConfig(
+      id: id ?? this.id,
+      senderId: this.senderId,
+      debitKeywords: this.debitKeywords,
+      creditKeywords: this.creditKeywords,
     );
   }
 }
