@@ -1,4 +1,3 @@
-
 import '../models/transaction.dart';
 import '../models/budget.dart';
 import '../models/sms_config.dart';
@@ -104,4 +103,5 @@ final SmsConfig DUMMY_SMS_CONFIG = SmsConfig(
   senderId: 'YOUR-BANK',
   debitKeywords: ['debited', 'spent', 'paid'],
   creditKeywords: ['credited', 'received'],
+  id: '',
 );

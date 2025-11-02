@@ -43,6 +43,7 @@ dependencies:
   google_sign_in: ^6.1.0
   animated_text_kit: ^4.3.0
   intl: ^0.19.0
+  another_telephony: ^0.4.1 # replace with actual latest version if different
 
 dev_dependencies:
   flutter_test:
