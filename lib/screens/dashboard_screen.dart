@@ -225,7 +225,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           key = DateFormat('yyyy-MM-dd').format(t.date);
           break;
         case Period.weekly:
-          key = '${t.date.year}-W${(t.date.day / 7).ceil()}';
+          key = '${t.date.year}-W${DateFormat('w').format(t.date)}';
           break;
         case Period.monthly:
           key = DateFormat('yyyy-MM').format(t.date);
