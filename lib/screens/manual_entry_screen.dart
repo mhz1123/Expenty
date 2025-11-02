@@ -18,18 +18,18 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
   String _category = '';
   String _description = '';
 
-  void _submitForm() {
+  Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
       final newTransaction = Transaction(
-        id: 'trx_${DateTime.now().millisecondsSinceEpoch}',
+        id: '',
         type: _type,
         amount: _amount,
         category: _category,
         description: _description,
         date: DateTime.now(),
       );
-      Provider.of<AppProvider>(context, listen: false).addTransaction(newTransaction);
+      await Provider.of<AppProvider>(context, listen: false).addTransaction(newTransaction);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Transaction added successfully!')),
       );

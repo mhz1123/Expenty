@@ -19,17 +19,17 @@ class _BudgetScreenState extends State<BudgetScreen> {
   bool _isCompulsory = false;
   bool _isEditing = false;
 
-  void _submitForm() {
+  Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
       final newBudget = Budget(
-        id: _isEditing ? _id! : 'b_${DateTime.now().millisecondsSinceEpoch}',
+        id: _isEditing ? _id! : '',
         category: _category,
         limit: _limit,
         spent: _isEditing ? Provider.of<AppProvider>(context, listen: false).budgets.firstWhere((b) => b.id == _id).spent : 0,
         isCompulsory: _isCompulsory,
       );
-      Provider.of<AppProvider>(context, listen: false).updateBudget(newBudget);
+      await Provider.of<AppProvider>(context, listen: false).updateBudget(newBudget);
       _resetForm();
     }
   }
@@ -79,13 +79,15 @@ class _BudgetScreenState extends State<BudgetScreen> {
                 child: Column(
                   children: [
                     TextFormField(
+                      key: ValueKey(_isEditing ? _id : 'category'),
                       initialValue: _category,
                       decoration: const InputDecoration(labelText: 'Category'),
                       validator: (value) => value!.isEmpty ? 'Please enter a category' : null,
                       onSaved: (value) => _category = value!,
                     ),
                     TextFormField(
-                      initialValue: _limit.toString(),
+                      key: ValueKey(_isEditing ? '${_id}_limit' : 'limit'),
+                      initialValue: _limit == 0 ? '' : _limit.toString(),
                       decoration: const InputDecoration(labelText: 'Limit (\$)'),
                       keyboardType: TextInputType.number,
                       validator: (value) => value!.isEmpty ? 'Please enter a limit' : null,

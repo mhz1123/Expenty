@@ -16,25 +16,30 @@ class _SmsConfigScreenState extends State<SmsConfigScreen> {
   late String _senderId;
   late String _debitKeywords;
   late String _creditKeywords;
+  late String _id;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final smsConfig = Provider.of<AppProvider>(context).smsConfig;
-    _senderId = smsConfig.senderId;
-    _debitKeywords = smsConfig.debitKeywords.join(', ');
-    _creditKeywords = smsConfig.creditKeywords.join(', ');
+    if (smsConfig != null) {
+      _id = smsConfig.id;
+      _senderId = smsConfig.senderId;
+      _debitKeywords = smsConfig.debitKeywords.join(', ');
+      _creditKeywords = smsConfig.creditKeywords.join(', ');
+    }
   }
 
-  void _submitForm() {
+  Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
       final newConfig = SmsConfig(
+        id: _id,
         senderId: _senderId,
         debitKeywords: _debitKeywords.split(',').map((e) => e.trim()).toList(),
         creditKeywords: _creditKeywords.split(',').map((e) => e.trim()).toList(),
       );
-      Provider.of<AppProvider>(context, listen: false).updateSmsConfig(newConfig);
+      await Provider.of<AppProvider>(context, listen: false).updateSmsConfig(newConfig);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Configuration saved successfully!')),
       );
@@ -43,6 +48,12 @@ class _SmsConfigScreenState extends State<SmsConfigScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final smsConfig = Provider.of<AppProvider>(context).smsConfig;
+
+    if (smsConfig == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: SingleChildScrollView(

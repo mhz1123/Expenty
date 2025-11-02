@@ -1,10 +1,11 @@
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 import '../providers/app_provider.dart';
 import '../widgets/terminal_window.dart';
-import 'package:fl_chart/fl_chart.dart';
 import '../models/transaction.dart';
+import '../models/budget.dart';
 
 enum Period { daily, weekly, monthly, yearly }
 
@@ -21,8 +22,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final appProvider = Provider.of<AppProvider>(context);
-    final transactions = appProvider.transactions;
-    final budgets = appProvider.budgets;
+    final List<Transaction> transactions = appProvider.transactions;
+    final List<Budget> budgets = appProvider.budgets;
 
     final totalIncome = transactions.where((t) => t.type == 'credit').fold(0.0, (sum, t) => sum + t.amount);
     final totalExpense = transactions.where((t) => t.type == 'debit').fold(0.0, (sum, t) => sum + t.amount);
@@ -61,10 +62,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   _buildPeriodSelector(),
                   const SizedBox(height: 16.0),
-                  SizedBox(
-                    height: 200,
-                    child: LineChart(
-                      _getChartData(transactions),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: SizedBox(
+                        height: 200,
+                        width: 600,
+                        child: LineChart(
+                          _getChartData(transactions, budgets),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -131,26 +139,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  LineChartData _getChartData(List<Transaction> transactions) {
-    // This is a simplified version of the chart data processing.
-    // A more complete implementation would aggregate data by the selected period.
-    final spots = <FlSpot>[];
-    for (int i = 0; i < transactions.length; i++) {
-      if (transactions[i].type == 'debit') {
-        spots.add(FlSpot(i.toDouble(), transactions[i].amount));
-      }
-    }
+  LineChartData _getChartData(List<Transaction> transactions, List<Budget> budgets) {
+    final expenditures = transactions.where((t) => t.type == 'debit').toList();
+    final categories = expenditures.map((t) => t.category).toSet().toList();
+    final lineBarsData = <LineChartBarData>[];
+    final colors = [Colors.blue, Colors.red, Colors.green, Colors.orange, Colors.purple, Colors.brown];
 
-    return LineChartData(
-      lineBarsData: [
+    for (int i = 0; i < categories.length; i++) {
+      final category = categories[i];
+      final categoryExpenditures = expenditures.where((t) => t.category == category).toList();
+      final spots = _aggregateData(categoryExpenditures);
+
+      final budget = budgets.firstWhere((b) => b.category == category, orElse: () => Budget(id: '', category: '', limit: 0, spent: 0, isCompulsory: false));
+      final budgetSpots = <FlSpot>[];
+
+      if (spots.isNotEmpty) {
+        for (int j = 0; j < spots.length; j++) {
+          double budgetValue = 0;
+          if (budget.limit > 0) {
+            switch (_selectedPeriod) {
+              case Period.daily:
+                budgetValue = budget.limit / 30;
+                break;
+              case Period.weekly:
+                budgetValue = budget.limit / 4;
+                break;
+              case Period.monthly:
+                budgetValue = budget.limit;
+                break;
+              case Period.yearly:
+                budgetValue = budget.limit * 12;
+                break;
+            }
+          }
+          budgetSpots.add(FlSpot(j.toDouble(), budgetValue));
+        }
+      }
+
+
+      lineBarsData.add(
         LineChartBarData(
           spots: spots,
           isCurved: true,
-          color: Colors.blue,
-          barWidth: 3,
+          color: colors[i % colors.length],
+          barWidth: 2,
+          isStrokeCapRound: true,
+          dotData: FlDotData(show: false),
           belowBarData: BarAreaData(show: false),
         ),
-      ],
+      );
+
+      lineBarsData.add(
+        LineChartBarData(
+          spots: budgetSpots,
+          isCurved: true,
+          color: colors[i % colors.length].withOpacity(0.5),
+          barWidth: 2,
+          isStrokeCapRound: true,
+          dotData: FlDotData(show: false),
+          dashArray: [5, 5],
+          belowBarData: BarAreaData(show: false),
+        ),
+      );
+    }
+
+    return LineChartData(
+      lineBarsData: lineBarsData,
       titlesData: FlTitlesData(
         leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
         bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -160,6 +214,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
       gridData: FlGridData(show: true),
       borderData: FlBorderData(show: true),
     );
+  }
+
+  List<FlSpot> _aggregateData(List<Transaction> transactions) {
+    final data = <String, double>{};
+    for (var t in transactions) {
+      String key;
+      switch (_selectedPeriod) {
+        case Period.daily:
+          key = DateFormat('yyyy-MM-dd').format(t.date);
+          break;
+        case Period.weekly:
+          key = '${t.date.year}-W${(t.date.day / 7).ceil()}';
+          break;
+        case Period.monthly:
+          key = DateFormat('yyyy-MM').format(t.date);
+          break;
+        case Period.yearly:
+          key = t.date.year.toString();
+          break;
+      }
+      data.update(key, (value) => value + t.amount, ifAbsent: () => t.amount);
+    }
+
+    final sortedKeys = data.keys.toList()..sort();
+    final spots = <FlSpot>[];
+    for (int i = 0; i < sortedKeys.length; i++) {
+      spots.add(FlSpot(i.toDouble(), data[sortedKeys[i]]!));
+    }
+    return spots;
   }
 
   Widget _buildBudgetInfo(String title, String value, {Color color = Colors.black}) {

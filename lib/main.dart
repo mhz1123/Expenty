@@ -1,8 +1,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import './providers/app_provider.dart';
 import './widgets/app_shell.dart';
+import './screens/splash_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -34,7 +36,7 @@ class MyApp extends StatelessWidget {
             ),
           ),
         ),
-        home: const SplashScreen(),
+        home: SplashScreen(),
       ),
     );
   }

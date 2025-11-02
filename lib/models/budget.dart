@@ -13,4 +13,20 @@ class Budget {
     required this.spent,
     required this.isCompulsory,
   });
+
+  Budget copyWith({
+    String? id,
+    String? category,
+    double? limit,
+    double? spent,
+    bool? isCompulsory,
+  }) {
+    return Budget(
+      id: id ?? this.id,
+      category: category ?? this.category,
+      limit: limit ?? this.limit,
+      spent: spent ?? this.spent,
+      isCompulsory: isCompulsory ?? this.isCompulsory,
+    );
+  }
 }
