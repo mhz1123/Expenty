@@ -331,6 +331,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        dataRowHeight: 80,
         columns: [
           if (_isSelectionMode) const DataColumn(label: SizedBox(width: 20)),
           const DataColumn(label: Text('Date')),
@@ -357,12 +358,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                     ),
                   DataCell(Text(DateFormat('dd-MMM-yy').format(t.date))),
                   DataCell(
-                    SizedBox(
-                      width: 200,
-                      child: Text(
-                        t.description,
-                        overflow: TextOverflow.ellipsis,
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.5,
                       ),
+                      child: Text(t.description, softWrap: true),
                     ),
                   ),
                   DataCell(Text(t.category)),

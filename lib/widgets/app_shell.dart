@@ -182,21 +182,6 @@ class _AppShellState extends State<AppShell> {
           ),
         ),
         body: _screens[_selectedIndex],
-        bottomNavigationBar: BottomAppBar(
-          color: Colors.black,
-          child: Container(
-            height: 50.0,
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Text(
-                  'STATUS: ONLINE | LATENCY: 12ms',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

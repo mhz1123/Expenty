@@ -115,14 +115,60 @@ class SmsParserService {
     }
   }
 
+  /// Get the last SMS checkpoint timestamp from Firestore
+  Future<DateTime?> _getLastCheckpoint() async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return null;
+
+      final doc = await _firestore.collection('sms_checkpoints').doc(uid).get();
+
+      if (doc.exists) {
+        final data = doc.data();
+        if (data != null && data['lastProcessedTime'] != null) {
+          final timestamp = data['lastProcessedTime'] as Timestamp;
+          debugPrint('Last checkpoint: ${timestamp.toDate()}');
+          return timestamp.toDate();
+        }
+      }
+
+      debugPrint('No checkpoint found, will process from 60 days ago');
+      return null;
+    } catch (e) {
+      debugPrint('Error getting checkpoint: $e');
+      return null;
+    }
+  }
+
+  /// Update the last SMS checkpoint timestamp in Firestore
+  Future<void> _updateCheckpoint(DateTime timestamp) async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+
+      await _firestore.collection('sms_checkpoints').doc(uid).set({
+        'lastProcessedTime': Timestamp.fromDate(timestamp),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      debugPrint('Updated checkpoint to: $timestamp');
+    } catch (e) {
+      debugPrint('Error updating checkpoint: $e');
+    }
+  }
+
   Future<void> _processExistingSms() async {
     try {
       debugPrint('Processing existing SMS messages...');
 
-      // Get inbox messages from last 60 days
-      final DateTime sixtyDaysAgo = DateTime.now().subtract(
-        const Duration(days: 60),
-      );
+      // Get the last checkpoint
+      DateTime? lastCheckpoint = await _getLastCheckpoint();
+
+      // If no checkpoint exists, default to 60 days ago
+      final DateTime startDate =
+          lastCheckpoint ?? DateTime.now().subtract(const Duration(days: 60));
+
+      debugPrint('Processing SMS from: $startDate');
 
       List<SmsMessage> messages = await _telephony.getInboxSms(
         columns: [
@@ -133,17 +179,30 @@ class SmsParserService {
         ],
         filter: SmsFilter.where(
           SmsColumn.DATE,
-        ).greaterThan(sixtyDaysAgo.millisecondsSinceEpoch.toString()),
-        sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
+        ).greaterThan(startDate.millisecondsSinceEpoch.toString()),
+        sortOrder: [
+          OrderBy(SmsColumn.DATE, sort: Sort.ASC),
+        ], // Process oldest first
       );
 
-      debugPrint('Found ${messages.length} messages in inbox');
+      debugPrint('Found ${messages.length} messages after checkpoint');
 
       int processedCount = 0;
       int matchedCount = 0;
+      DateTime? latestMessageTime;
 
       for (var message in messages) {
         final address = (message.address ?? '').toString().trim();
+        final messageDate =
+            message.date != null
+                ? DateTime.fromMillisecondsSinceEpoch(message.date!)
+                : DateTime.now();
+
+        // Track the latest message time
+        if (latestMessageTime == null ||
+            messageDate.isAfter(latestMessageTime)) {
+          latestMessageTime = messageDate;
+        }
 
         // Filter by sender FIRST if configured
         if (senderId.isNotEmpty) {
@@ -163,10 +222,19 @@ class SmsParserService {
         if (processed) processedCount++;
       }
 
+      // Update checkpoint to the latest message time
+      if (latestMessageTime != null) {
+        await _updateCheckpoint(latestMessageTime);
+      } else if (messages.isEmpty) {
+        // If no new messages, update checkpoint to current time
+        await _updateCheckpoint(DateTime.now());
+      }
+
       debugPrint('Finished processing SMS messages:');
-      debugPrint('  Total messages: ${messages.length}');
+      debugPrint('  Total messages after checkpoint: ${messages.length}');
       debugPrint('  Matched sender filter: $matchedCount');
       debugPrint('  Successfully parsed: $processedCount');
+      debugPrint('  New checkpoint set to: $latestMessageTime');
     } catch (e) {
       debugPrint('Error processing existing SMS: $e');
     }
@@ -178,7 +246,7 @@ class SmsParserService {
       final body = (message.body ?? '').toString().trim();
       final messageId = '${address}_${message.date}_${body.hashCode}';
 
-      // Skip if already processed
+      // Skip if already processed in this session
       if (_processedMessageIds.contains(messageId)) {
         return false;
       }
@@ -238,13 +306,21 @@ class SmsParserService {
       // Check if transaction already exists in Firestore
       final uid = _auth.currentUser?.uid;
       if (uid != null) {
+        // Check for exact match within a 1-hour window to avoid duplicates
+        final dateStart = date.subtract(const Duration(hours: 1));
+        final dateEnd = date.add(const Duration(hours: 1));
+
         final existingQuery =
             await _firestore
                 .collection('transactions')
                 .where('userId', isEqualTo: uid)
                 .where('amount', isEqualTo: amount)
                 .where('type', isEqualTo: type)
-                .where('date', isEqualTo: Timestamp.fromDate(date))
+                .where(
+                  'date',
+                  isGreaterThanOrEqualTo: Timestamp.fromDate(dateStart),
+                )
+                .where('date', isLessThanOrEqualTo: Timestamp.fromDate(dateEnd))
                 .limit(1)
                 .get();
 
@@ -273,6 +349,14 @@ class SmsParserService {
       await appProvider.addTransaction(txn, updateBudget: false);
 
       _processedMessageIds.add(messageId);
+
+      // Update checkpoint for real-time messages
+      final messageDate =
+          message.date != null
+              ? DateTime.fromMillisecondsSinceEpoch(message.date!)
+              : DateTime.now();
+      await _updateCheckpoint(messageDate);
+
       debugPrint('✅ Transaction added successfully');
       return true;
     } catch (e) {
