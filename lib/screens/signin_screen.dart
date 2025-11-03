@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:provider/provider.dart';
+import 'package:another_telephony/telephony.dart';
 import '../services/auth_service.dart';
-import '../widgets/app_shell.dart';
 import '../providers/app_provider.dart';
+import '../widgets/sms_config_dialog.dart';
+import '../widgets/app_shell.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({Key? key}) : super(key: key);
@@ -15,6 +17,7 @@ class SignInScreen extends StatefulWidget {
 class _SignInScreenState extends State<SignInScreen> {
   bool _showSignInPrompt = false;
   bool _isSigningIn = false;
+  final Telephony _telephony = Telephony.instance;
 
   @override
   void initState() {
@@ -44,9 +47,33 @@ class _SignInScreenState extends State<SignInScreen> {
     if (!mounted) return;
 
     if (user != null) {
+      debugPrint('User signed in: ${user.uid}');
+
       // Initialize app provider
       final appProvider = Provider.of<AppProvider>(context, listen: false);
       await appProvider.init();
+
+      if (!mounted) return;
+
+      // Request SMS permissions for new user
+      debugPrint('Requesting SMS permissions...');
+      final bool? granted = await _telephony.requestSmsPermissions;
+
+      if (granted != true) {
+        debugPrint('SMS permissions denied');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'SMS permissions denied. You can enable them later in settings.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        debugPrint('SMS permissions granted');
+      }
 
       if (!mounted) return;
 
@@ -54,9 +81,17 @@ class _SignInScreenState extends State<SignInScreen> {
 
       if (!mounted) return;
 
-      Navigator.of(
-        context,
-      ).pushReplacement(MaterialPageRoute(builder: (_) => const AppShell()));
+      // Check if SMS config exists
+      if (appProvider.smsConfig == null ||
+          appProvider.smsConfig!.senderId.isEmpty) {
+        // Show SMS config dialog for new user
+        debugPrint('New user - showing SMS config dialog');
+        _showSmsConfigDialog();
+      } else {
+        // Existing user with config - go to app
+        debugPrint('Existing user - proceeding to app');
+        _navigateToApp();
+      }
     } else {
       if (!mounted) return;
 
@@ -71,6 +106,26 @@ class _SignInScreenState extends State<SignInScreen> {
         ),
       );
     }
+  }
+
+  void _showSmsConfigDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => SmsConfigDialog(
+            onSaved: () {
+              Navigator.of(context).pop();
+              _navigateToApp();
+            },
+          ),
+    );
+  }
+
+  void _navigateToApp() {
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const AppShell()));
   }
 
   @override
@@ -182,7 +237,7 @@ class _SignInScreenState extends State<SignInScreen> {
                             speed: const Duration(milliseconds: 50),
                           ),
                           TyperAnimatedText(
-                            'Starting application...',
+                            'Requesting permissions...',
                             textStyle: const TextStyle(
                               color: Colors.black,
                               fontSize: 18.0,

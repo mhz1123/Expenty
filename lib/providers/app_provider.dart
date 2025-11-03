@@ -33,7 +33,6 @@ class AppProvider with ChangeNotifier {
     debugPrint('Initializing AppProvider for user: ${user.uid}');
 
     try {
-      // Wait a bit to ensure auth is fully propagated
       await Future.delayed(const Duration(milliseconds: 500));
 
       await Future.wait([
@@ -50,7 +49,6 @@ class AppProvider with ChangeNotifier {
       debugPrint('Budgets: ${_budgets.length}');
     } catch (e) {
       debugPrint('Error initializing AppProvider: $e');
-      // Mark as initialized even on error to prevent infinite loops
       _isInitialized = true;
       notifyListeners();
     }
@@ -66,7 +64,6 @@ class AppProvider with ChangeNotifier {
 
       debugPrint('Fetching transactions for user: $uid');
 
-      // Query transactions where userId field matches current user
       final snapshot =
           await _firestore
               .collection('transactions')
@@ -119,7 +116,6 @@ class AppProvider with ChangeNotifier {
 
       debugPrint('Fetching budgets for user: $uid');
 
-      // Query budgets where userId field matches current user
       final snapshot =
           await _firestore
               .collection('budgets')
@@ -175,7 +171,6 @@ class AppProvider with ChangeNotifier {
         );
         debugPrint('SMS config fetched successfully');
       } else {
-        // Create default config
         debugPrint('No SMS config found, creating default...');
         _smsConfig = SmsConfig(
           id: uid,
@@ -202,7 +197,6 @@ class AppProvider with ChangeNotifier {
         debugPrint(
           'Permission denied fetching SMS config. Please check Firestore rules.',
         );
-        // Set default config even on permission error
         final uid = _auth.currentUser?.uid;
         if (uid != null) {
           _smsConfig = SmsConfig(
@@ -233,7 +227,6 @@ class AppProvider with ChangeNotifier {
         return;
       }
 
-      // Add userId field to the transaction document
       final newTransactionRef = await _firestore
           .collection('transactions')
           .add({
@@ -247,8 +240,6 @@ class AppProvider with ChangeNotifier {
 
       _transactions.insert(0, transaction.copyWith(id: newTransactionRef.id));
 
-      // Only update budget if updateBudget is true (for manual entries)
-      // SMS transactions don't update budget
       if (updateBudget && transaction.type == 'debit') {
         final budgetIndex = _budgets.indexWhere(
           (b) => b.category.toLowerCase() == transaction.category.toLowerCase(),
@@ -284,6 +275,102 @@ class AppProvider with ChangeNotifier {
     }
   }
 
+  Future<void> updateTransaction(
+    String id,
+    String category,
+    String description,
+    double amount,
+  ) async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+
+      await _firestore.collection('transactions').doc(id).update({
+        'category': category,
+        'description': description,
+        'amount': amount,
+      });
+
+      final index = _transactions.indexWhere((t) => t.id == id);
+      if (index != -1) {
+        _transactions[index] = _transactions[index].copyWith(
+          category: category,
+          description: description,
+          amount: amount,
+        );
+      }
+
+      notifyListeners();
+      debugPrint('Transaction updated successfully');
+    } on FirebaseException catch (e) {
+      debugPrint('Error updating transaction: ${e.code} - ${e.message}');
+      rethrow;
+    } catch (e) {
+      debugPrint('Error updating transaction: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteTransactions(List<String> ids) async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+
+      final batch = _firestore.batch();
+      for (final id in ids) {
+        batch.delete(_firestore.collection('transactions').doc(id));
+      }
+      await batch.commit();
+
+      _transactions.removeWhere((t) => ids.contains(t.id));
+
+      notifyListeners();
+      debugPrint('${ids.length} transaction(s) deleted successfully');
+    } on FirebaseException catch (e) {
+      debugPrint('Error deleting transactions: ${e.code} - ${e.message}');
+      rethrow;
+    } catch (e) {
+      debugPrint('Error deleting transactions: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateTransactionCategories(
+    List<String> ids,
+    String newCategory,
+  ) async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+
+      final batch = _firestore.batch();
+      for (final id in ids) {
+        batch.update(_firestore.collection('transactions').doc(id), {
+          'category': newCategory,
+        });
+      }
+      await batch.commit();
+
+      for (final id in ids) {
+        final index = _transactions.indexWhere((t) => t.id == id);
+        if (index != -1) {
+          _transactions[index] = _transactions[index].copyWith(
+            category: newCategory,
+          );
+        }
+      }
+
+      notifyListeners();
+      debugPrint('${ids.length} transaction(s) category updated');
+    } on FirebaseException catch (e) {
+      debugPrint('Error updating categories: ${e.code} - ${e.message}');
+      rethrow;
+    } catch (e) {
+      debugPrint('Error updating categories: $e');
+      rethrow;
+    }
+  }
+
   Future<void> updateBudget(Budget budget) async {
     try {
       final uid = _auth.currentUser?.uid;
@@ -292,7 +379,6 @@ class AppProvider with ChangeNotifier {
       final budgetIndex = _budgets.indexWhere((b) => b.id == budget.id);
 
       if (budgetIndex != -1) {
-        // Update existing budget
         await _firestore.collection('budgets').doc(budget.id).update({
           'category': budget.category,
           'limit': budget.limit,
@@ -301,7 +387,6 @@ class AppProvider with ChangeNotifier {
         });
         _budgets[budgetIndex] = budget;
       } else {
-        // Create new budget with userId
         final newBudgetRef = await _firestore.collection('budgets').add({
           'userId': uid,
           'category': budget.category,
@@ -354,13 +439,18 @@ class AppProvider with ChangeNotifier {
 }
 
 extension on expenty_transaction.Transaction {
-  expenty_transaction.Transaction copyWith({String? id}) {
+  expenty_transaction.Transaction copyWith({
+    String? id,
+    String? category,
+    String? description,
+    double? amount,
+  }) {
     return expenty_transaction.Transaction(
       id: id ?? this.id,
       type: this.type,
-      amount: this.amount,
-      category: this.category,
-      description: this.description,
+      amount: amount ?? this.amount,
+      category: category ?? this.category,
+      description: description ?? this.description,
       date: this.date,
     );
   }

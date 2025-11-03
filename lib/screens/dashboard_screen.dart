@@ -19,7 +19,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   Period _selectedPeriod = Period.daily;
 
-  // Added: shared color palette for categories so chart and legend match
+  // Color palette for categories
   final List<Color> _categoryColors = [
     Colors.blue,
     Colors.red,
@@ -27,6 +27,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Colors.orange,
     Colors.purple,
     Colors.brown,
+    Colors.pink,
+    Colors.teal,
+    Colors.amber,
+    Colors.indigo,
   ];
 
   @override
@@ -34,10 +38,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final appProvider = Provider.of<AppProvider>(context);
     final List<Transaction> transactions = appProvider.transactions;
     final List<Budget> budgets = appProvider.budgets;
-
-    // compute expenditures and categories for legend (matches chart)
-    final expenditures = transactions.where((t) => t.type == 'debit').toList();
-    final categories = expenditures.map((t) => t.category).toSet().toList();
 
     final totalIncome = transactions
         .where((t) => t.type == 'credit')
@@ -56,6 +56,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final discretionarySpent = budgets
         .where((b) => !b.isCompulsory)
         .fold(0.0, (sum, b) => sum + b.spent);
+
+    // Get all unique categories from transactions
+    final expenditures = transactions.where((t) => t.type == 'debit').toList();
+    final allCategories = expenditures.map((t) => t.category).toSet().toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -103,15 +107,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: SizedBox(
-                        height: 250,
+                        height: 300,
                         width: _getChartWidth(),
                         child: LineChart(_getChartData(transactions, budgets)),
                       ),
                     ),
                   ),
                   const SizedBox(height: 8.0),
-                  // Legend placed below the chart
-                  _buildLegend(categories),
+                  _buildLegend(allCategories),
                 ],
               ),
             ),
@@ -166,13 +169,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double _getChartWidth() {
     switch (_selectedPeriod) {
       case Period.daily:
-        return 600; // 7 days
+        return 600;
       case Period.weekly:
-        return 600; // 4-5 weeks
+        return 600;
       case Period.monthly:
-        return 800; // 12 months
+        return 800;
       case Period.yearly:
-        return 600; // Years
+        return 600;
     }
   }
 
@@ -220,101 +223,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final now = DateTime.now();
     final expenditures = transactions.where((t) => t.type == 'debit').toList();
 
-    // Get all time slots for the selected period
     final allSlots = _getAllTimeSlots(now, transactions);
     final slotLabels = _getSlotLabels(allSlots);
 
-    // Calculate total budget limit for the period
     final totalBudgetLimit = budgets.fold(0.0, (sum, b) => sum + b.limit);
     final periodBudgetLimit = _calculatePeriodBudgetLimit(totalBudgetLimit);
 
-    // Aggregate data by category
-    final categories = expenditures.map((t) => t.category).toSet().toList();
+    // Get all unique categories
+    final allCategories = expenditures.map((t) => t.category).toSet().toList();
     final lineBarsData = <LineChartBarData>[];
-    // Use shared colors defined on the state so legend and chart are consistent
-    final colors = _categoryColors;
 
     double maxY = periodBudgetLimit > 0 ? periodBudgetLimit : 100;
 
-    // Create data for each category
-    for (int i = 0; i < categories.length; i++) {
-      final category = categories[i];
+    // Create line for each category
+    for (int i = 0; i < allCategories.length; i++) {
+      final category = allCategories[i];
       final categoryExpenditures =
           expenditures.where((t) => t.category == category).toList();
       final spots = _aggregateDataForAllSlots(categoryExpenditures, allSlots);
 
       if (spots.isEmpty) continue;
 
-      // Update max Y
       for (var spot in spots) {
         if (spot.y > maxY) maxY = spot.y;
       }
 
-      // Add expenditure line
       lineBarsData.add(
         LineChartBarData(
           spots: spots,
           isCurved: true,
-          color: colors[i % colors.length],
-          barWidth: 3,
+          color: _categoryColors[i % _categoryColors.length],
+          barWidth: 2,
           isStrokeCapRound: true,
           dotData: FlDotData(
             show: true,
             getDotPainter: (spot, percent, barData, index) {
               return FlDotCirclePainter(
-                radius: 4,
-                color: colors[i % colors.length],
-                strokeWidth: 2,
+                radius: 3,
+                color: _categoryColors[i % _categoryColors.length],
+                strokeWidth: 1,
                 strokeColor: Colors.white,
               );
             },
           ),
           belowBarData: BarAreaData(
             show: true,
-            color: colors[i % colors.length].withOpacity(0.1),
+            color: _categoryColors[i % _categoryColors.length].withOpacity(0.1),
           ),
         ),
       );
     }
 
-    // Add total expenditure line (dark gray)
-    final totalExpenditureSpots = _aggregateTotalExpenditureForAllSlots(
-      expenditures,
-      allSlots,
-    );
-    if (totalExpenditureSpots.isNotEmpty) {
-      // Update max Y based on total expenditure
-      for (var spot in totalExpenditureSpots) {
-        if (spot.y > maxY) maxY = spot.y;
-      }
-
-      lineBarsData.add(
-        LineChartBarData(
-          spots: totalExpenditureSpots,
-          isCurved: true,
-          color: Colors.grey[800]!,
-          barWidth: 4,
-          isStrokeCapRound: true,
-          dotData: FlDotData(
-            show: true,
-            getDotPainter: (spot, percent, barData, index) {
-              return FlDotCirclePainter(
-                radius: 5,
-                color: Colors.grey[800]!,
-                strokeWidth: 2,
-                strokeColor: Colors.white,
-              );
-            },
-          ),
-          belowBarData: BarAreaData(
-            show: true,
-            color: Colors.grey[800]!.withOpacity(0.1),
-          ),
-        ),
-      );
-    }
-
-    // Add budget limit line (horizontal dotted line)
+    // Add budget limit line
     if (periodBudgetLimit > 0) {
       final budgetSpots = <FlSpot>[];
       for (int i = 0; i < allSlots.length; i++) {
@@ -415,7 +375,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<String> _getAllTimeSlots(DateTime now, List<Transaction> transactions) {
     switch (_selectedPeriod) {
       case Period.daily:
-        // Get all 7 days of current week
         final weekStart = now.subtract(Duration(days: now.weekday - 1));
         return List.generate(7, (i) {
           final date = weekStart.add(Duration(days: i));
@@ -423,7 +382,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
 
       case Period.weekly:
-        // Get all weeks of current month (typically 4-5 weeks)
         final monthStart = DateTime(now.year, now.month, 1);
         final monthEnd = DateTime(now.year, now.month + 1, 0);
         final weeks = <String>[];
@@ -445,14 +403,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return weeks;
 
       case Period.monthly:
-        // Get all 12 months of current year
         return List.generate(12, (i) {
           final month = DateTime(now.year, i + 1);
           return DateFormat('yyyy-MM').format(month);
         });
 
       case Period.yearly:
-        // Get all years from first transaction to now
         final years =
             transactions.map((t) => t.date.year).toSet().toList()..sort();
 
@@ -505,12 +461,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ) {
     final data = <String, double>{};
 
-    // Initialize all slots with 0
     for (var slot in allSlots) {
       data[slot] = 0.0;
     }
 
-    // Aggregate transaction data
     for (var t in transactions) {
       String key;
       switch (_selectedPeriod) {
@@ -537,54 +491,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     }
 
-    // Create spots for all slots
-    final spots = <FlSpot>[];
-    for (int i = 0; i < allSlots.length; i++) {
-      spots.add(FlSpot(i.toDouble(), data[allSlots[i]]!));
-    }
-
-    return spots;
-  }
-
-  List<FlSpot> _aggregateTotalExpenditureForAllSlots(
-    List<Transaction> transactions,
-    List<String> allSlots,
-  ) {
-    final data = <String, double>{};
-
-    // Initialize all slots with 0
-    for (var slot in allSlots) {
-      data[slot] = 0.0;
-    }
-
-    // Aggregate all expenditure data
-    for (var t in transactions) {
-      String key;
-      switch (_selectedPeriod) {
-        case Period.daily:
-          key = DateFormat('yyyy-MM-dd').format(t.date);
-          break;
-        case Period.weekly:
-          final weekNumber =
-              ((t.date.difference(DateTime(t.date.year, 1, 1)).inDays) / 7)
-                  .floor() +
-              1;
-          key = '${t.date.year}-W${weekNumber.toString().padLeft(2, '0')}';
-          break;
-        case Period.monthly:
-          key = DateFormat('yyyy-MM').format(t.date);
-          break;
-        case Period.yearly:
-          key = t.date.year.toString();
-          break;
-      }
-
-      if (data.containsKey(key)) {
-        data[key] = data[key]! + t.amount;
-      }
-    }
-
-    // Create spots for all slots
     final spots = <FlSpot>[];
     for (int i = 0; i < allSlots.length; i++) {
       spots.add(FlSpot(i.toDouble(), data[allSlots[i]]!));
@@ -598,13 +504,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     switch (_selectedPeriod) {
       case Period.daily:
-        return monthlyBudget / 30; // Daily limit
+        return monthlyBudget / 30;
       case Period.weekly:
-        return monthlyBudget / 4; // Weekly limit
+        return monthlyBudget / 4;
       case Period.monthly:
-        return monthlyBudget; // Monthly limit
+        return monthlyBudget;
       case Period.yearly:
-        return monthlyBudget * 12; // Yearly limit
+        return monthlyBudget * 12;
     }
   }
 
@@ -665,7 +571,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // Updated: build a legend with Total Expenditure line
   Widget _buildLegend(List<String> categories) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -691,21 +596,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             );
           }),
-          // Add Total Expenditure to legend
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
                 width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: Colors.grey[800],
-                  borderRadius: BorderRadius.circular(2),
-                ),
+                height: 2,
+                decoration: BoxDecoration(color: Colors.red.withOpacity(0.7)),
               ),
               const SizedBox(width: 6),
               const Text(
-                'Total Expenditure',
+                'Budget Limit',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ],
