@@ -80,17 +80,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   _buildFinancialInfo(
                     'Total Income',
-                    '\$${totalIncome.toStringAsFixed(2)}',
+                    '₹${totalIncome.toStringAsFixed(2)}',
                     Colors.green,
                   ),
                   _buildFinancialInfo(
                     'Total Expense',
-                    '\$${totalExpense.toStringAsFixed(2)}',
+                    '₹${totalExpense.toStringAsFixed(2)}',
                     Colors.red,
                   ),
                   _buildFinancialInfo(
                     'Net Balance',
-                    '\$${balance.toStringAsFixed(2)}',
+                    '₹${balance.toStringAsFixed(2)}',
                     balance >= 0 ? Colors.black : Colors.red,
                   ),
                 ],
@@ -128,26 +128,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Expanded(
                         child: _buildBudgetInfo(
                           'Compulsory',
-                          '\$${compulsorySpending.toStringAsFixed(2)}',
+                          '₹${compulsorySpending.toStringAsFixed(2)}',
                         ),
                       ),
                       Expanded(
                         child: _buildBudgetInfo(
                           'Discretionary Limit',
-                          '\$${discretionaryBudget.toStringAsFixed(2)}',
+                          '₹${discretionaryBudget.toStringAsFixed(2)}',
                         ),
                       ),
                       Expanded(
                         child: _buildBudgetInfo(
                           'Discretionary Spent',
-                          '\$${discretionarySpent.toStringAsFixed(2)}',
+                          '₹${discretionarySpent.toStringAsFixed(2)}',
                           color: Colors.red,
                         ),
                       ),
                       Expanded(
                         child: _buildBudgetInfo(
                           'Available',
-                          '\$${(discretionaryBudget - discretionarySpent).toStringAsFixed(2)}',
+                          '₹${(discretionaryBudget - discretionarySpent).toStringAsFixed(2)}',
                           color: Colors.green,
                         ),
                       ),
@@ -305,7 +305,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             interval: maxY > 0 ? maxY / 5 : 20,
             getTitlesWidget: (value, meta) {
               return Text(
-                '\$${value.toInt()}',
+                '₹${value.toInt()}',
                 style: const TextStyle(fontSize: 10, color: Colors.black),
               );
             },
@@ -359,7 +359,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           getTooltipItems: (touchedSpots) {
             return touchedSpots.map((spot) {
               return LineTooltipItem(
-                '\$${spot.y.toStringAsFixed(2)}',
+                '₹${spot.y.toStringAsFixed(2)}',
                 const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -554,7 +554,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               Text(
-                '\$${budget.spent.toStringAsFixed(2)} / \$${budget.limit.toStringAsFixed(2)}',
+                '₹${budget.spent.toStringAsFixed(2)} / ₹${budget.limit.toStringAsFixed(2)}',
               ),
             ],
           ),

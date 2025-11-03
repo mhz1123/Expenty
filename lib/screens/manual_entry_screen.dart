@@ -83,7 +83,7 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
                     ),
                     TextFormField(
                       decoration: const InputDecoration(
-                        labelText: 'Amount (\$)',
+                        labelText: 'Amount (₹)',
                       ),
                       keyboardType: TextInputType.number,
                       validator:

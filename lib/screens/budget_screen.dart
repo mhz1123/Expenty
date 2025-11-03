@@ -26,10 +26,19 @@ class _BudgetScreenState extends State<BudgetScreen> {
         id: _isEditing ? _id! : '',
         category: _category,
         limit: _limit,
-        spent: _isEditing ? Provider.of<AppProvider>(context, listen: false).budgets.firstWhere((b) => b.id == _id).spent : 0,
+        spent:
+            _isEditing
+                ? Provider.of<AppProvider>(
+                  context,
+                  listen: false,
+                ).budgets.firstWhere((b) => b.id == _id).spent
+                : 0,
         isCompulsory: _isCompulsory,
       );
-      await Provider.of<AppProvider>(context, listen: false).updateBudget(newBudget);
+      await Provider.of<AppProvider>(
+        context,
+        listen: false,
+      ).updateBudget(newBudget);
       _resetForm();
     }
   }
@@ -82,15 +91,19 @@ class _BudgetScreenState extends State<BudgetScreen> {
                       key: ValueKey(_isEditing ? _id : 'category'),
                       initialValue: _category,
                       decoration: const InputDecoration(labelText: 'Category'),
-                      validator: (value) => value!.isEmpty ? 'Please enter a category' : null,
+                      validator:
+                          (value) =>
+                              value!.isEmpty ? 'Please enter a category' : null,
                       onSaved: (value) => _category = value!,
                     ),
                     TextFormField(
                       key: ValueKey(_isEditing ? '${_id}_limit' : 'limit'),
                       initialValue: _limit == 0 ? '' : _limit.toString(),
-                      decoration: const InputDecoration(labelText: 'Limit (\$)'),
+                      decoration: const InputDecoration(labelText: 'Limit (₹)'),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value!.isEmpty ? 'Please enter a limit' : null,
+                      validator:
+                          (value) =>
+                              value!.isEmpty ? 'Please enter a limit' : null,
                       onSaved: (value) => _limit = double.parse(value!),
                     ),
                     CheckboxListTile(
@@ -108,7 +121,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
                       children: [
                         ElevatedButton(
                           onPressed: _submitForm,
-                          child: Text(_isEditing ? 'Update Budget' : 'Add Budget'),
+                          child: Text(
+                            _isEditing ? 'Update Budget' : 'Add Budget',
+                          ),
                         ),
                         if (_isEditing)
                           ElevatedButton(
@@ -131,7 +146,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
                   final budget = budgets[index];
                   return ListTile(
                     title: Text(budget.category),
-                    subtitle: Text('Spent: \u0024${budget.spent.toStringAsFixed(2)} / Limit: \u0024${budget.limit.toStringAsFixed(2)}'),
+                    subtitle: Text(
+                      'Spent: ₹${budget.spent.toStringAsFixed(2)} / Limit: ₹${budget.limit.toStringAsFixed(2)}',
+                    ),
                     trailing: IconButton(
                       icon: const Icon(Icons.edit),
                       onPressed: () => _editBudget(budget),

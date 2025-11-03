@@ -6,7 +6,9 @@ import '../screens/budget_screen.dart';
 import '../screens/manual_entry_screen.dart';
 import '../screens/sms_config_screen.dart';
 import '../screens/profile_screen.dart';
+import '../screens/signin_screen.dart';
 import '../services/sms_parser.dart';
+import '../services/auth_service.dart';
 import '../providers/app_provider.dart';
 
 class AppShell extends StatefulWidget {
@@ -68,52 +70,131 @@ class _AppShellState extends State<AppShell> {
     Navigator.pop(context); // Close the drawer
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('[ EXPENCER ]'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
-      drawer: Drawer(
-        backgroundColor: Colors.grey[200],
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.black),
-              child: Text(
-                '[ NAV ]',
-                style: TextStyle(color: Colors.white, fontSize: 24),
+  Future<void> _handleSignOut() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Sign Out'),
+            content: const Text('Are you sure you want to sign out?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
               ),
-            ),
-            for (int i = 0; i < _screens.length; i++)
-              ListTile(
-                leading: const Text(
-                  ' \$>',
-                  style: TextStyle(color: Colors.grey),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  'Sign Out',
+                  style: TextStyle(color: Colors.red),
                 ),
-                title: Text('cd ./${_screenTitles[i]}'),
-                onTap: () => _onItemTapped(i),
-                selected: i == _selectedIndex,
-              ),
-          ],
-        ),
-      ),
-      body: _screens[_selectedIndex],
-      bottomNavigationBar: BottomAppBar(
-        color: Colors.black,
-        child: Container(
-          height: 50.0,
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Text(
-                'STATUS: ONLINE | LATENCY: 12ms',
-                style: TextStyle(color: Colors.white),
               ),
             ],
+          ),
+    );
+
+    if (confirm == true) {
+      await AuthService().signOut();
+
+      if (!mounted) return;
+
+      // Navigate to sign-in screen
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const SignInScreen()),
+        (route) => false,
+      );
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    if (_selectedIndex != 0) {
+      // If not on dashboard, go back to dashboard
+      setState(() {
+        _selectedIndex = 0;
+      });
+      return false; // Don't exit the app
+    }
+    // If on dashboard, allow exit
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('[ EXPENCER ]'),
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+        ),
+        drawer: Drawer(
+          backgroundColor: Colors.grey[200],
+          child: Column(
+            children: <Widget>[
+              Container(
+                width: double.infinity,
+                color: Colors.black,
+                padding: const EdgeInsets.only(
+                  top: 54.0,
+                  left: 16.0,
+                  bottom: 16.0,
+                ),
+                child: const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '[ NAV ]',
+                    style: TextStyle(color: Colors.white, fontSize: 24),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    for (int i = 0; i < _screens.length; i++)
+                      ListTile(
+                        leading: const Text(
+                          ' \$>',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                        title: Text('cd ./${_screenTitles[i]}'),
+                        onTap: () => _onItemTapped(i),
+                        selected: i == _selectedIndex,
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.red),
+                title: const Text(
+                  'Sign Out',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onTap: () {
+                  Navigator.pop(context); // Close drawer first
+                  _handleSignOut();
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+        body: _screens[_selectedIndex],
+        bottomNavigationBar: BottomAppBar(
+          color: Colors.black,
+          child: Container(
+            height: 50.0,
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Text(
+                  'STATUS: ONLINE | LATENCY: 12ms',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ],
+            ),
           ),
         ),
       ),

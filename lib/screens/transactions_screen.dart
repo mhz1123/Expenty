@@ -233,27 +233,45 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Transaction Log',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                const Expanded(
+                  child: Text(
+                    'Transaction Log',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
                 ),
-                Row(
+                Wrap(
+                  spacing: 4.0,
+                  runSpacing: 4.0,
                   children: [
                     if (_isSelectionMode) ...[
                       IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
+                        icon: const Icon(
+                          Icons.delete,
+                          color: Colors.red,
+                          size: 20,
+                        ),
                         onPressed: _bulkDelete,
-                        tooltip: 'Delete Selected',
+                        tooltip: 'Delete',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.category, color: Colors.blue),
+                        icon: const Icon(
+                          Icons.category,
+                          color: Colors.blue,
+                          size: 20,
+                        ),
                         onPressed: _bulkChangeCategory,
-                        tooltip: 'Change Category',
+                        tooltip: 'Category',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.select_all),
+                        icon: const Icon(Icons.select_all, size: 20),
                         onPressed: () => _selectAll(currentTransactions),
                         tooltip: 'Select All',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
                       ),
                     ],
                     IconButton(
@@ -261,12 +279,15 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         _isSelectionMode
                             ? Icons.check_box
                             : Icons.check_box_outline_blank,
+                        size: 20,
                       ),
                       onPressed: _toggleSelectionMode,
                       tooltip:
                           _isSelectionMode
                               ? 'Exit Selection'
                               : 'Select Multiple',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                     ),
                   ],
                 ),
@@ -347,7 +368,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   DataCell(Text(t.category)),
                   DataCell(
                     Text(
-                      '${t.type == 'credit' ? '+' : '-'}\$${t.amount.toStringAsFixed(2)}',
+                      '${t.type == 'credit' ? '+' : '-'}₹${t.amount.toStringAsFixed(2)}',
                       style: TextStyle(
                         color: t.type == 'credit' ? Colors.green : Colors.red,
                         fontWeight: FontWeight.bold,
