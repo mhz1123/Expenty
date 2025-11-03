@@ -16,13 +16,42 @@ class SmsParserService {
   String senderId = '';
   List<String> debitKeywords = [];
   List<String> creditKeywords = [];
+  bool _configLoaded = false;
+
+  // Track processed messages to avoid duplicates
+  final Set<String> _processedMessageIds = {};
 
   SmsParserService({required this.appProvider});
 
   Future<void> start() async {
     try {
-      // Load config from Firestore
+      debugPrint('Starting SMS Parser Service...');
+
+      // Wait for app provider to be initialized
+      int attempts = 0;
+      while (!appProvider.isInitialized && attempts < 20) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        attempts++;
+      }
+
+      if (!appProvider.isInitialized) {
+        debugPrint(
+          'AppProvider not initialized after waiting. Using defaults.',
+        );
+      }
+
+      // Load config from AppProvider (which got it from Firestore)
       await _loadConfig();
+
+      if (!_configLoaded) {
+        debugPrint('SMS config not loaded. SMS parsing disabled.');
+        return;
+      }
+
+      debugPrint('SMS Config loaded successfully:');
+      debugPrint('  Sender ID: "$senderId"');
+      debugPrint('  Debit Keywords: $debitKeywords');
+      debugPrint('  Credit Keywords: $creditKeywords');
 
       // Request SMS permissions
       final bool? permissionsGranted = await _telephony.requestSmsPermissions;
@@ -32,7 +61,10 @@ class SmsParserService {
         return;
       }
 
-      debugPrint('SMS permissions granted. Setting up listeners...');
+      debugPrint('SMS permissions granted. Processing existing messages...');
+
+      // Process any existing unread SMS messages
+      await _processExistingSms();
 
       // Listen to incoming SMS in foreground
       _telephony.listenIncomingSms(
@@ -43,9 +75,6 @@ class SmsParserService {
         onBackgroundMessage: backgroundMessageHandler,
       );
 
-      // Process any existing unread SMS messages
-      await _processExistingSms();
-
       debugPrint('SMS Parser Service started successfully');
     } catch (e) {
       debugPrint('Error starting SMS Parser Service: $e');
@@ -54,30 +83,35 @@ class SmsParserService {
 
   Future<void> _loadConfig() async {
     try {
-      final uid = _auth.currentUser?.uid;
-      if (uid == null) {
-        debugPrint('No user logged in, using default config');
+      // Get config from AppProvider (which already loaded it from Firestore)
+      final smsConfig = appProvider.smsConfig;
+
+      if (smsConfig == null) {
+        debugPrint('No SMS config available in AppProvider');
+        _configLoaded = false;
         return;
       }
 
-      final docRef = _firestore.collection('sms_config').doc(uid);
-      final snap = await docRef.get();
+      senderId = smsConfig.senderId.trim();
+      debitKeywords =
+          smsConfig.debitKeywords.where((k) => k.trim().isNotEmpty).toList();
+      creditKeywords =
+          smsConfig.creditKeywords.where((k) => k.trim().isNotEmpty).toList();
 
-      if (!snap.exists) {
-        debugPrint('No SMS config found for user');
+      // Validate config
+      if (debitKeywords.isEmpty && creditKeywords.isEmpty) {
+        debugPrint(
+          'Warning: No keywords configured. SMS parsing will be limited.',
+        );
+        _configLoaded = false;
         return;
       }
 
-      final data = snap.data()!;
-      senderId = data['senderId'] as String? ?? '';
-      debitKeywords = List<String>.from(data['debitKeywords'] ?? []);
-      creditKeywords = List<String>.from(data['creditKeywords'] ?? []);
-
-      debugPrint(
-        'SMS config loaded: senderId=$senderId, debitKeywords=${debitKeywords.length}, creditKeywords=${creditKeywords.length}',
-      );
+      _configLoaded = true;
+      debugPrint('SMS config loaded from AppProvider');
     } catch (e) {
       debugPrint('Failed to load SMS config: $e');
+      _configLoaded = false;
     }
   }
 
@@ -85,72 +119,113 @@ class SmsParserService {
     try {
       debugPrint('Processing existing SMS messages...');
 
-      // Get inbox messages from last 30 days
-      final DateTime thirtyDaysAgo = DateTime.now().subtract(
-        const Duration(days: 30),
+      // Get inbox messages from last 60 days
+      final DateTime sixtyDaysAgo = DateTime.now().subtract(
+        const Duration(days: 60),
       );
 
       List<SmsMessage> messages = await _telephony.getInboxSms(
-        columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
+        columns: [
+          SmsColumn.ADDRESS,
+          SmsColumn.BODY,
+          SmsColumn.DATE,
+          SmsColumn.ID,
+        ],
         filter: SmsFilter.where(
           SmsColumn.DATE,
-        ).greaterThan(thirtyDaysAgo.millisecondsSinceEpoch.toString()),
+        ).greaterThan(sixtyDaysAgo.millisecondsSinceEpoch.toString()),
         sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
       );
 
-      debugPrint('Found ${messages.length} messages to process');
+      debugPrint('Found ${messages.length} messages in inbox');
+
+      int processedCount = 0;
+      int matchedCount = 0;
 
       for (var message in messages) {
-        await _processMessage(message);
+        final address = (message.address ?? '').toString().trim();
+
+        // Filter by sender FIRST if configured
+        if (senderId.isNotEmpty) {
+          final lowerAddr = address.toLowerCase();
+          final matchedSender = senderId
+              .toLowerCase()
+              .split(',')
+              .any((s) => lowerAddr.contains(s.trim()));
+
+          if (!matchedSender) {
+            continue; // Skip this message
+          }
+          matchedCount++;
+        }
+
+        final processed = await _processMessage(message);
+        if (processed) processedCount++;
       }
 
-      debugPrint('Finished processing existing SMS messages');
+      debugPrint('Finished processing SMS messages:');
+      debugPrint('  Total messages: ${messages.length}');
+      debugPrint('  Matched sender filter: $matchedCount');
+      debugPrint('  Successfully parsed: $processedCount');
     } catch (e) {
       debugPrint('Error processing existing SMS: $e');
     }
   }
 
-  Future<void> _processMessage(SmsMessage message) async {
+  Future<bool> _processMessage(SmsMessage message) async {
     try {
       final address = (message.address ?? '').toString().trim();
       final body = (message.body ?? '').toString().trim();
+      final messageId = '${address}_${message.date}_${body.hashCode}';
 
-      if (body.isEmpty) {
-        return;
+      // Skip if already processed
+      if (_processedMessageIds.contains(messageId)) {
+        return false;
       }
 
-      // Filter by sender if configured
+      if (body.isEmpty) {
+        return false;
+      }
+
+      // Filter by sender FIRST if configured
       if (senderId.isNotEmpty) {
         final lowerAddr = address.toLowerCase();
-        final matchedSender = senderId
-            .toLowerCase()
-            .split(',')
-            .any((s) => lowerAddr.contains(s.trim()));
+        final senderIds =
+            senderId.toLowerCase().split(',').map((s) => s.trim()).toList();
+        final matchedSender = senderIds.any((s) => lowerAddr.contains(s));
 
         if (!matchedSender) {
-          debugPrint('Sender $address does not match configured sender ID');
-          return;
+          debugPrint(
+            '❌ Skipped: Sender "$address" does not match configured sender(s): $senderIds',
+          );
+          return false;
         }
       }
 
-      // Detect transaction type
+      debugPrint('📱 Processing message from $address');
+
+      // Detect transaction type using configured keywords
       final type = _detectType(body);
       if (type == null) {
-        debugPrint('Message not recognized as credit/debit: ${_shorten(body)}');
-        return;
+        debugPrint(
+          '❌ Skipped: Not recognized as transaction: ${_shorten(body, 50)}',
+        );
+        return false;
       }
 
       // Extract amount
       final amount = _extractAmount(body);
       if (amount == null) {
-        debugPrint('Amount parse failed for: ${_shorten(body)}');
-        return;
+        debugPrint(
+          '❌ Skipped: Could not extract amount from: ${_shorten(body, 50)}',
+        );
+        return false;
       }
 
       // Extract date
       final date = _extractDate(body) ?? DateTime.now();
 
-      // Extract category/merchant (optional)
+      // Extract category/merchant
       String category = _extractCategory(body, type);
 
       // Check if category exists in budgets, if not set to "Misc"
@@ -158,6 +233,26 @@ class SmsParserService {
           appProvider.budgets.map((b) => b.category.toLowerCase()).toList();
       if (!budgetCategories.contains(category.toLowerCase())) {
         category = 'Misc';
+      }
+
+      // Check if transaction already exists in Firestore
+      final uid = _auth.currentUser?.uid;
+      if (uid != null) {
+        final existingQuery =
+            await _firestore
+                .collection('transactions')
+                .where('userId', isEqualTo: uid)
+                .where('amount', isEqualTo: amount)
+                .where('type', isEqualTo: type)
+                .where('date', isEqualTo: Timestamp.fromDate(date))
+                .limit(1)
+                .get();
+
+        if (existingQuery.docs.isNotEmpty) {
+          debugPrint('⚠️  Transaction already exists, skipping...');
+          _processedMessageIds.add(messageId);
+          return false;
+        }
       }
 
       // Create transaction
@@ -171,52 +266,65 @@ class SmsParserService {
       );
 
       debugPrint(
-        'Adding transaction: $type Rs.$amount on ${DateFormat('dd-MMM-yy').format(date)}',
+        '✅ Adding transaction: $type ₹$amount on ${DateFormat('dd-MMM-yy').format(date)} - $category',
       );
 
       // Add to provider WITHOUT updating budget (updateBudget = false)
       await appProvider.addTransaction(txn, updateBudget: false);
 
-      debugPrint('Transaction added successfully');
+      _processedMessageIds.add(messageId);
+      debugPrint('✅ Transaction added successfully');
+      return true;
     } catch (e) {
-      debugPrint('Error processing message: $e');
+      debugPrint('❌ Error processing message: $e');
+      return false;
     }
   }
 
   String? _detectType(String body) {
     final lc = body.toLowerCase();
 
-    // Check for debit keywords
+    // Check for debit keywords from config
     final hasDebit = debitKeywords.any(
       (k) => lc.contains(k.toLowerCase().trim()),
     );
 
-    // Check for credit keywords
+    // Check for credit keywords from config
     final hasCredit = creditKeywords.any(
       (k) => lc.contains(k.toLowerCase().trim()),
     );
 
-    if (hasDebit && !hasCredit) return 'debit';
-    if (hasCredit && !hasDebit) return 'credit';
+    if (hasDebit && !hasCredit) {
+      debugPrint('  Type: DEBIT (matched keyword)');
+      return 'debit';
+    }
+    if (hasCredit && !hasDebit) {
+      debugPrint('  Type: CREDIT (matched keyword)');
+      return 'credit';
+    }
 
-    // If both or neither, try to determine from common patterns
+    // If both or neither matched, check common fallback patterns
     if (lc.contains('debited') ||
         lc.contains('withdrawn') ||
-        lc.contains('spent')) {
+        lc.contains('spent') ||
+        lc.contains('purchased')) {
+      debugPrint('  Type: DEBIT (fallback pattern)');
       return 'debit';
     }
     if (lc.contains('credited') ||
         lc.contains('received') ||
         lc.contains('deposit')) {
+      debugPrint('  Type: CREDIT (fallback pattern)');
       return 'credit';
     }
 
+    debugPrint('  Type: UNKNOWN');
     return null;
   }
 
   double? _extractAmount(String body) {
     // Pattern to match amounts in various formats
-    // Rs 100.00, Rs. 100, INR 100.00, 100.00, Rs100, etc.
+    // Rs 100.00, Rs. 100, INR 100.00, 100.00, Rs100, ₹100, etc.
     final amountRegex = RegExp(
       r'(?:rs\.?|inr|₹|\$)\s*([0-9]{1,3}(?:[,\s][0-9]{3})*(?:[.,][0-9]{1,2})?)|([0-9]{1,3}(?:[,\s][0-9]{3})*(?:[.,][0-9]{1,2})?)\s*(?:rs\.?|inr)',
       caseSensitive: false,
@@ -242,6 +350,7 @@ class SmsParserService {
       try {
         final amount = double.parse(raw);
         if (amount > 0) {
+          debugPrint('  Amount: ₹$amount');
           return amount;
         }
       } catch (_) {

@@ -21,6 +21,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   SmsParserService? _smsService;
+  bool _smsServiceStarted = false;
 
   @override
   Widget build(BuildContext context) {
@@ -28,16 +29,17 @@ class _MyAppState extends State<MyApp> {
       create: (_) => AppProvider(),
       child: Builder(
         builder: (context) {
-          // Initialize SMS service after provider is available
-          if (_smsService == null) {
-            final appProvider = Provider.of<AppProvider>(
-              context,
-              listen: false,
-            );
-            _smsService = SmsParserService(appProvider: appProvider);
+          final appProvider = Provider.of<AppProvider>(context, listen: false);
 
-            // Start SMS service after a delay to ensure everything is initialized
-            Future.delayed(const Duration(seconds: 2), () {
+          // Initialize and start SMS service once after provider is ready
+          if (_smsService == null) {
+            _smsService = SmsParserService(appProvider: appProvider);
+          }
+
+          // Start SMS service after app initialization (when user is logged in)
+          if (!_smsServiceStarted && appProvider.isInitialized) {
+            _smsServiceStarted = true;
+            Future.delayed(const Duration(seconds: 1), () {
               _smsService?.start();
             });
           }

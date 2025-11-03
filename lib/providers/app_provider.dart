@@ -30,23 +30,41 @@ class AppProvider with ChangeNotifier {
       return;
     }
 
+    debugPrint('Initializing AppProvider for user: ${user.uid}');
+
     try {
+      // Wait a bit to ensure auth is fully propagated
+      await Future.delayed(const Duration(milliseconds: 500));
+
       await Future.wait([
         _fetchTransactions(),
         _fetchBudgets(),
         _fetchSmsConfig(),
       ]);
+
       _isInitialized = true;
       notifyListeners();
+
+      debugPrint('AppProvider initialized successfully');
+      debugPrint('Transactions: ${_transactions.length}');
+      debugPrint('Budgets: ${_budgets.length}');
     } catch (e) {
       debugPrint('Error initializing AppProvider: $e');
+      // Mark as initialized even on error to prevent infinite loops
+      _isInitialized = true;
+      notifyListeners();
     }
   }
 
   Future<void> _fetchTransactions() async {
     try {
       final uid = _auth.currentUser?.uid;
-      if (uid == null) return;
+      if (uid == null) {
+        debugPrint('Cannot fetch transactions: No user logged in');
+        return;
+      }
+
+      debugPrint('Fetching transactions for user: $uid');
 
       // Query transactions where userId field matches current user
       final snapshot =
@@ -74,7 +92,18 @@ class AppProvider with ChangeNotifier {
             );
           }).toList();
 
+      debugPrint('Fetched ${_transactions.length} transactions');
       notifyListeners();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          'Permission denied fetching transactions. Please check Firestore rules.',
+        );
+      } else {
+        debugPrint(
+          'Firebase error fetching transactions: ${e.code} - ${e.message}',
+        );
+      }
     } catch (e) {
       debugPrint('Error fetching transactions: $e');
     }
@@ -83,7 +112,12 @@ class AppProvider with ChangeNotifier {
   Future<void> _fetchBudgets() async {
     try {
       final uid = _auth.currentUser?.uid;
-      if (uid == null) return;
+      if (uid == null) {
+        debugPrint('Cannot fetch budgets: No user logged in');
+        return;
+      }
+
+      debugPrint('Fetching budgets for user: $uid');
 
       // Query budgets where userId field matches current user
       final snapshot =
@@ -105,7 +139,16 @@ class AppProvider with ChangeNotifier {
               )
               .toList();
 
+      debugPrint('Fetched ${_budgets.length} budgets');
       notifyListeners();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          'Permission denied fetching budgets. Please check Firestore rules.',
+        );
+      } else {
+        debugPrint('Firebase error fetching budgets: ${e.code} - ${e.message}');
+      }
     } catch (e) {
       debugPrint('Error fetching budgets: $e');
     }
@@ -114,7 +157,12 @@ class AppProvider with ChangeNotifier {
   Future<void> _fetchSmsConfig() async {
     try {
       final uid = _auth.currentUser?.uid;
-      if (uid == null) return;
+      if (uid == null) {
+        debugPrint('Cannot fetch SMS config: No user logged in');
+        return;
+      }
+
+      debugPrint('Fetching SMS config for user: $uid');
 
       final doc = await _firestore.collection('sms_config').doc(uid).get();
 
@@ -125,22 +173,50 @@ class AppProvider with ChangeNotifier {
           debitKeywords: List<String>.from(doc['debitKeywords'] ?? []),
           creditKeywords: List<String>.from(doc['creditKeywords'] ?? []),
         );
+        debugPrint('SMS config fetched successfully');
       } else {
         // Create default config
+        debugPrint('No SMS config found, creating default...');
         _smsConfig = SmsConfig(
           id: uid,
           senderId: '',
-          debitKeywords: ['debited', 'withdrawn', 'paid'],
+          debitKeywords: ['debited', 'withdrawn', 'paid', 'spent'],
           creditKeywords: ['credited', 'received', 'deposit'],
         );
-        await _firestore.collection('sms_config').doc(uid).set({
-          'senderId': _smsConfig!.senderId,
-          'debitKeywords': _smsConfig!.debitKeywords,
-          'creditKeywords': _smsConfig!.creditKeywords,
-        });
+
+        try {
+          await _firestore.collection('sms_config').doc(uid).set({
+            'senderId': _smsConfig!.senderId,
+            'debitKeywords': _smsConfig!.debitKeywords,
+            'creditKeywords': _smsConfig!.creditKeywords,
+          });
+          debugPrint('Default SMS config created');
+        } catch (e) {
+          debugPrint('Error creating default SMS config: $e');
+        }
       }
 
       notifyListeners();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          'Permission denied fetching SMS config. Please check Firestore rules.',
+        );
+        // Set default config even on permission error
+        final uid = _auth.currentUser?.uid;
+        if (uid != null) {
+          _smsConfig = SmsConfig(
+            id: uid,
+            senderId: '',
+            debitKeywords: ['debited', 'withdrawn', 'paid', 'spent'],
+            creditKeywords: ['credited', 'received', 'deposit'],
+          );
+        }
+      } else {
+        debugPrint(
+          'Firebase error fetching SMS config: ${e.code} - ${e.message}',
+        );
+      }
     } catch (e) {
       debugPrint('Error fetching SMS config: $e');
     }
@@ -158,16 +234,16 @@ class AppProvider with ChangeNotifier {
       }
 
       // Add userId field to the transaction document
-      final newTransactionRef = await _firestore.collection('transactions').add(
-        {
-          'userId': uid, // Add userId field
-          'type': transaction.type,
-          'amount': transaction.amount,
-          'category': transaction.category,
-          'description': transaction.description,
-          'date': Timestamp.fromDate(transaction.date),
-        },
-      );
+      final newTransactionRef = await _firestore
+          .collection('transactions')
+          .add({
+            'userId': uid,
+            'type': transaction.type,
+            'amount': transaction.amount,
+            'category': transaction.category,
+            'description': transaction.description,
+            'date': Timestamp.fromDate(transaction.date),
+          });
 
       _transactions.insert(0, transaction.copyWith(id: newTransactionRef.id));
 
@@ -193,6 +269,15 @@ class AppProvider with ChangeNotifier {
       }
 
       notifyListeners();
+      debugPrint('Transaction added successfully');
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          'Permission denied adding transaction. Please check Firestore rules.',
+        );
+      }
+      debugPrint('Error adding transaction: ${e.code} - ${e.message}');
+      rethrow;
     } catch (e) {
       debugPrint('Error adding transaction: $e');
       rethrow;
@@ -218,7 +303,7 @@ class AppProvider with ChangeNotifier {
       } else {
         // Create new budget with userId
         final newBudgetRef = await _firestore.collection('budgets').add({
-          'userId': uid, // Add userId field
+          'userId': uid,
           'category': budget.category,
           'limit': budget.limit,
           'spent': budget.spent,
@@ -228,6 +313,14 @@ class AppProvider with ChangeNotifier {
       }
 
       notifyListeners();
+      debugPrint('Budget updated successfully');
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          'Permission denied updating budget. Please check Firestore rules.',
+        );
+      }
+      debugPrint('Error updating budget: ${e.code} - ${e.message}');
     } catch (e) {
       debugPrint('Error updating budget: $e');
     }
@@ -246,6 +339,14 @@ class AppProvider with ChangeNotifier {
 
       _smsConfig = smsConfig.copyWith(id: uid);
       notifyListeners();
+      debugPrint('SMS config updated successfully');
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          'Permission denied updating SMS config. Please check Firestore rules.',
+        );
+      }
+      debugPrint('Error updating SMS config: ${e.code} - ${e.message}');
     } catch (e) {
       debugPrint('Error updating SMS config: $e');
     }
