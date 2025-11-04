@@ -1,4 +1,4 @@
-package com.example.expenty_flutter
+package com.cfar.expencer
 
 import io.flutter.embedding.android.FlutterActivity
 
